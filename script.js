@@ -230,7 +230,6 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
 
 // ─── Intersection Observer: compare table rows stagger ───────────────────────
 (function initCompareRows() {
-  const rows = document.querySelectorAll('.compare-row:not(.compare-header)');
   const observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
@@ -243,11 +242,14 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
     },
     { threshold: 0.1 }
   );
-  rows.forEach((row, i) => {
-    row.style.opacity = '0';
-    row.style.transform = 'translateX(-10px)';
-    row.style.transition = `opacity 0.4s ease ${i * 0.08}s, transform 0.4s ease ${i * 0.08}s`;
-    observer.observe(row);
+  // Stagger resets per table so wildcard rows don't inherit a long delay offset
+  document.querySelectorAll('.compare-table').forEach((table) => {
+    table.querySelectorAll('.compare-row:not(.compare-header)').forEach((row, i) => {
+      row.style.opacity = '0';
+      row.style.transform = 'translateX(-10px)';
+      row.style.transition = `opacity 0.4s ease ${i * 0.08}s, transform 0.4s ease ${i * 0.08}s`;
+      observer.observe(row);
+    });
   });
 })();
 
