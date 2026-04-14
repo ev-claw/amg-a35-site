@@ -83,7 +83,7 @@ if [ -d "$APP_DIR/.git" ]; then
   runuser -u deploy -- git -C "$APP_DIR" pull --ff-only
 else
   echo "==> Cloning from GitHub…"
-  mkdir -p "$APP_DIR"
+  mkdir -p "$(dirname "$APP_DIR")"
   runuser -u deploy -- sh -c "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new' git clone $REPO $APP_DIR"
 fi
 
