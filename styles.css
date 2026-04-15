@@ -1067,6 +1067,7 @@ ul { list-style: none; }
   gap: 2px;
 }
 .compare-header .compare-col span { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); }
+.compare-vehicle-icon { display: block; width: 68px; height: auto; margin-bottom: 5px; }
 .compare-col-label { font-weight: 600; color: var(--amg-silver-dim); font-size: 0.8rem; }
 .compare-col-amg { background: rgba(204,0,0,0.07); }
 .compare-col-a45 { background: rgba(204,0,0,0.04); color: var(--amg-silver-dim); }
@@ -1076,6 +1077,9 @@ ul { list-style: none; }
 .compare-col-ninja { background: rgba(26,140,42,0.06); }
 .compare-header .compare-col-ninja { color: #1a8c2a; }
 .verdict-card-ninja { border-left-color: #1a8c2a; }
+.compare-col-jcb { background: rgba(200,136,0,0.06); }
+.compare-header .compare-col-jcb { color: #c88800; }
+.verdict-card-jcb { border-left-color: #c88800; }
 .compare-col.highlight { font-weight: 600; color: var(--text-primary); }
 .compare-row:nth-child(even) { background: rgba(255,255,255,0.02); }
 .compare-row:not(.compare-header) .compare-col { color: var(--amg-silver-dim); }
