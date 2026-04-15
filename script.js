@@ -260,7 +260,7 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
 
   let audioCtx = null;
   let muted = false;
-  let hasTriedAutoplay = false;
+  let hasPlayedOnce = false;
 
   function getCtx() {
     if (!audioCtx) {
@@ -271,8 +271,9 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
     return audioCtx;
   }
 
+  // Soft-knee waveshaper — amount 60–600 range
   function makeDistortionCurve(amount) {
-    const n = 256;
+    const n = 512;
     const curve = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const x = (i * 2) / n - 1;
@@ -281,95 +282,157 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
     return curve;
   }
 
+  // White-noise buffer source
+  function makeNoise(ctx, duration) {
+    const sr = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, Math.ceil(sr * duration), sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    return src;
+  }
+
   function playVroom() {
     if (muted) return;
     const ctx = getCtx();
     if (!ctx) return;
+    hasPlayedOnce = true;
+    btn.classList.remove('invite');
 
     try {
-      // Build audio graph
-      const masterGain = ctx.createGain();
-      masterGain.connect(ctx.destination);
+      const t   = ctx.currentTime;
+      const dur = 3.4;
 
-      const osc = ctx.createOscillator();
-      osc.type = 'sawtooth';
-      const osc2 = ctx.createOscillator();
-      osc2.type = 'sawtooth';
-      const osc2Gain = ctx.createGain();
-      osc2Gain.gain.value = 0.38;
+      // ── Master output ───────────────────────────────────────────────────
+      const master = ctx.createGain();
+      master.connect(ctx.destination);
 
-      const distortion = ctx.createWaveShaper();
-      distortion.curve = makeDistortionCurve(55);
-      distortion.oversample = '2x';
+      // ── Distortion stage — heavier for AMG exhaust bark ────────────────
+      const dist = ctx.createWaveShaper();
+      dist.curve = makeDistortionCurve(160);
+      dist.oversample = '4x';
 
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.Q.value = 2.2;
+      // ── Low-pass filter — tracks RPM, opens on revs ────────────────────
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.Q.value = 1.6;
 
-      const t = ctx.currentTime;
+      // ── Mid-peak boost — exhaust character ~800 Hz ─────────────────────
+      const peak = ctx.createBiquadFilter();
+      peak.type = 'peaking';
+      peak.frequency.value = 820;
+      peak.Q.value = 0.85;
+      peak.gain.value = 10;
 
-      // Frequency envelope: two quick blips ("vroom vroom")
-      osc.frequency.setValueAtTime(58, t);
-      osc.frequency.exponentialRampToValueAtTime(148, t + 0.32);
-      osc.frequency.exponentialRampToValueAtTime(70, t + 0.58);
-      osc.frequency.setValueAtTime(70, t + 0.64);
-      osc.frequency.exponentialRampToValueAtTime(162, t + 0.98);
-      osc.frequency.exponentialRampToValueAtTime(80, t + 1.38);
-      osc.frequency.exponentialRampToValueAtTime(54, t + 2.2);
+      // ── Connect engine chain: dist → peak → lpf → master ───────────────
+      dist.connect(peak);
+      peak.connect(lpf);
+      lpf.connect(master);
 
-      // Harmonic at 2× frequency
-      osc2.frequency.setValueAtTime(116, t);
-      osc2.frequency.exponentialRampToValueAtTime(296, t + 0.32);
-      osc2.frequency.exponentialRampToValueAtTime(140, t + 0.58);
-      osc2.frequency.setValueAtTime(140, t + 0.64);
-      osc2.frequency.exponentialRampToValueAtTime(324, t + 0.98);
-      osc2.frequency.exponentialRampToValueAtTime(160, t + 1.38);
-      osc2.frequency.exponentialRampToValueAtTime(108, t + 2.2);
+      // ── Frequency schedule ──────────────────────────────────────────────
+      // 4-cyl firing frequency = RPM / 30.
+      // We drive the fundamental; harmonics multiply this.
+      // Idle ~900 RPM → 30 Hz; rev ~5500 RPM → 183 Hz.
+      const rampFreq = (param, k) => {
+        param.setValueAtTime(        30 * k, t);           // idle  ~900 RPM
+        param.exponentialRampToValueAtTime(190 * k, t + 0.28); // rev 1 ~5700 RPM
+        param.exponentialRampToValueAtTime( 52 * k, t + 0.54); // lift-off
+        param.exponentialRampToValueAtTime(183 * k, t + 0.76); // rev 2 ~5500 RPM
+        param.exponentialRampToValueAtTime( 47 * k, t + 1.02); // lift-off
+        param.exponentialRampToValueAtTime(158 * k, t + 1.16); // pop
+        param.exponentialRampToValueAtTime( 40 * k, t + 1.46); // settle
+        param.exponentialRampToValueAtTime( 28 * k, t + dur);  // idle
+      };
 
-      // Filter envelope (opens on revs)
-      filter.frequency.setValueAtTime(260, t);
-      filter.frequency.exponentialRampToValueAtTime(1600, t + 0.32);
-      filter.frequency.exponentialRampToValueAtTime(360, t + 0.58);
-      filter.frequency.setValueAtTime(360, t + 0.64);
-      filter.frequency.exponentialRampToValueAtTime(1900, t + 0.98);
-      filter.frequency.exponentialRampToValueAtTime(420, t + 1.38);
-      filter.frequency.exponentialRampToValueAtTime(210, t + 2.2);
+      // ── Oscillator layers ───────────────────────────────────────────────
+      const addOsc = (type, k, gain) => {
+        const o = ctx.createOscillator();
+        o.type = type;
+        rampFreq(o.frequency, k);
+        const g = ctx.createGain();
+        g.gain.value = gain;
+        o.connect(g);
+        g.connect(dist);
+        o.start(t);
+        o.stop(t + dur);
+      };
+      addOsc('sawtooth', 1,   1.00); // fundamental
+      addOsc('sawtooth', 2,   0.58); // 2nd harmonic
+      addOsc('square',   3,   0.26); // 3rd — adds 4-cyl roughness
+      addOsc('sawtooth', 4,   0.16); // 4th harmonic
+      addOsc('sawtooth', 0.5, 0.22); // sub-octave — body/thump
 
-      // Master gain: two blip shape with fade
-      masterGain.gain.setValueAtTime(0, t);
-      masterGain.gain.linearRampToValueAtTime(0.14, t + 0.06);
-      masterGain.gain.setValueAtTime(0.14, t + 0.44);
-      masterGain.gain.linearRampToValueAtTime(0.04, t + 0.62);
-      masterGain.gain.linearRampToValueAtTime(0.17, t + 0.72);
-      masterGain.gain.setValueAtTime(0.17, t + 1.05);
-      masterGain.gain.exponentialRampToValueAtTime(0.001, t + 2.4);
+      // ── LP filter envelope ──────────────────────────────────────────────
+      lpf.frequency.setValueAtTime( 190, t);
+      lpf.frequency.exponentialRampToValueAtTime(4200, t + 0.28);
+      lpf.frequency.exponentialRampToValueAtTime( 360, t + 0.54);
+      lpf.frequency.exponentialRampToValueAtTime(3800, t + 0.76);
+      lpf.frequency.exponentialRampToValueAtTime( 320, t + 1.02);
+      lpf.frequency.exponentialRampToValueAtTime(3200, t + 1.16);
+      lpf.frequency.exponentialRampToValueAtTime( 280, t + 1.46);
+      lpf.frequency.exponentialRampToValueAtTime( 180, t + dur);
 
-      // Connect graph
-      osc.connect(distortion);
-      osc2.connect(osc2Gain);
-      osc2Gain.connect(distortion);
-      distortion.connect(filter);
-      filter.connect(masterGain);
+      // ── Master gain envelope — blip shaping ────────────────────────────
+      master.gain.setValueAtTime(0,    t);
+      master.gain.linearRampToValueAtTime(0.22, t + 0.05); // fast attack
+      master.gain.setValueAtTime(      0.22, t + 0.36);
+      master.gain.linearRampToValueAtTime(0.05, t + 0.56); // dip (lift-off)
+      master.gain.linearRampToValueAtTime(0.24, t + 0.78); // rev 2
+      master.gain.setValueAtTime(      0.24, t + 0.98);
+      master.gain.linearRampToValueAtTime(0.06, t + 1.04); // dip
+      master.gain.linearRampToValueAtTime(0.17, t + 1.18); // pop
+      master.gain.setValueAtTime(      0.17, t + 1.40);
+      master.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
-      osc.start(t);
-      osc.stop(t + 2.5);
-      osc2.start(t);
-      osc2.stop(t + 2.5);
+      // ── Turbo / induction noise — rises with RPM ────────────────────────
+      const turbNoise = makeNoise(ctx, dur);
+      const turbBpf   = ctx.createBiquadFilter();
+      turbBpf.type = 'bandpass';
+      turbBpf.Q.value = 1.1;
+      // Induction noise frequency tracks revs
+      turbBpf.frequency.setValueAtTime( 550, t);
+      turbBpf.frequency.exponentialRampToValueAtTime(2400, t + 0.28);
+      turbBpf.frequency.exponentialRampToValueAtTime( 650, t + 0.54);
+      turbBpf.frequency.exponentialRampToValueAtTime(2200, t + 0.76);
+      turbBpf.frequency.exponentialRampToValueAtTime( 600, t + 1.02);
+      turbBpf.frequency.exponentialRampToValueAtTime(1900, t + 1.16);
+      turbBpf.frequency.exponentialRampToValueAtTime( 500, t + dur);
+      const turbGain = ctx.createGain();
+      turbGain.gain.setValueAtTime(0,    t);
+      turbGain.gain.linearRampToValueAtTime(0.08, t + 0.26);
+      turbGain.gain.setValueAtTime(      0.08, t + 1.22);
+      turbGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      turbNoise.connect(turbBpf);
+      turbBpf.connect(turbGain);
+      turbGain.connect(master);
+      turbNoise.start(t);
+      turbNoise.stop(t + dur);
+
+      // ── Exhaust crackle at each lift-off point ──────────────────────────
+      [t + 0.54, t + 1.02, t + 1.43].forEach((ct) => {
+        const cd = 0.055;
+        const cn = makeNoise(ctx, cd + 0.01);
+        const cdist = ctx.createWaveShaper();
+        cdist.curve = makeDistortionCurve(520);
+        cdist.oversample = '2x';
+        const chpf = ctx.createBiquadFilter();
+        chpf.type = 'highpass';
+        chpf.frequency.value = 1400;
+        const cg = ctx.createGain();
+        cg.gain.setValueAtTime(0,    t);
+        cg.gain.setValueAtTime(0.11, ct);
+        cg.gain.exponentialRampToValueAtTime(0.001, ct + cd);
+        cn.connect(cdist);
+        cdist.connect(chpf);
+        chpf.connect(cg);
+        cg.connect(master);
+        cn.start(ct);
+        cn.stop(ct + cd + 0.01);
+      });
+
     } catch (_) {
       // Fail silently — browser may block audio
-    }
-  }
-
-  function attemptAutoplay() {
-    if (hasTriedAutoplay) return;
-    hasTriedAutoplay = true;
-    const ctx = getCtx();
-    if (!ctx) return;
-    if (ctx.state === 'running') {
-      playVroom();
-    } else if (ctx.state === 'suspended') {
-      // Try to resume — succeeds only if browser permits (user gesture or policy allows)
-      ctx.resume().then(() => { if (ctx.state === 'running') playVroom(); }).catch(() => {});
     }
   }
 
@@ -383,16 +446,54 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
     btn.title = muted ? 'Sound muted' : 'Vroom vroom! 🏎';
   }
 
+  // ── Button click handler ────────────────────────────────────────────────────
+  // First click on the active button: context was likely suspended (autoplay blocked).
+  // Resuming inside a user-gesture handler is allowed by all browsers.
+  // We play without toggling mute so the user doesn't have to click twice.
   btn.addEventListener('click', () => {
-    muted = !muted;
-    updateBtn();
-    if (!muted) playVroom();
+    const ctx = getCtx();
+    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    if (!hasPlayedOnce && !muted) {
+      // First-ever interaction: play without toggling to muted
+      playVroom();
+    } else {
+      muted = !muted;
+      updateBtn();
+      if (!muted) playVroom();
+    }
   });
 
   updateBtn();
 
-  // Attempt autoplay once — roughly 1 s after page load
-  setTimeout(attemptAutoplay, 1000);
+  // Pulse hint so the user notices the sound button and knows to click it
+  btn.classList.add('invite');
+
+  // ── First-interaction autoplay ──────────────────────────────────────────────
+  // Any click on the page counts as a user gesture; resume & play once if
+  // sound hasn't played yet.  The button's own click handler also covers this,
+  // but this catches clicks on other elements (e.g. comparison picker).
+  function onFirstInteract() {
+    if (hasPlayedOnce || muted) return;
+    const ctx = getCtx();
+    if (!ctx) return;
+    ctx.resume().then(() => {
+      if (ctx.state === 'running' && !hasPlayedOnce && !muted) playVroom();
+    }).catch(() => {});
+  }
+  document.addEventListener('click',    onFirstInteract, { once: true, passive: true });
+  document.addEventListener('keydown',  onFirstInteract, { once: true, passive: true });
+  document.addEventListener('touchend', onFirstInteract, { once: true, passive: true });
+
+  // ── Pure autoplay attempt (succeeds in permissive / PWA contexts) ───────────
+  setTimeout(() => {
+    if (hasPlayedOnce) return;
+    const ctx = getCtx();
+    if (!ctx) return;
+    if (ctx.state === 'running') playVroom();
+    // If suspended here there is no user gesture — don't call resume()
+    // as it would be blocked and would create an uncancellable pending promise
+  }, 600);
 })();
 
 // ─── Random A35 drive-by animation ───────────────────────────────────────────
