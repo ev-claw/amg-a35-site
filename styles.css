@@ -1239,9 +1239,9 @@ ul { list-style: none; }
 /* ─── Cow Cruiser ────────────────────────────────────────────────────────── */
 .car-cruiser {
   position: fixed;
-  bottom: 0;
+  bottom: 0; /* overridden per-run by JS for random vertical position */
   left: 0;
-  width: 140px;
+  width: 140px; /* overridden per-run by JS for random size */
   z-index: 50;
   pointer-events: none;
   display: none;

@@ -254,9 +254,8 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
 })();
 
 
-// ─── Random A35 drive-by animation ───────────────────────────────────────────
+// ─── Cow drive-by animation ───────────────────────────────────────────────────
 (function initCarCruiser() {
-  // Respect prefers-reduced-motion
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   const car = document.getElementById('car-cruiser');
@@ -265,30 +264,107 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
   const carImg = car.querySelector('img');
   let animating = false;
 
+  // Synthesise a cow moo via Web Audio
+  function playMoo() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const t = ctx.currentTime;
+      const dur = 2.0;
+
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.value = 1000;
+      lpf.Q.value = 0.9;
+
+      const master = ctx.createGain();
+      lpf.connect(master);
+      master.connect(ctx.destination);
+
+      // Gain envelope: gentle attack, hold, fade out
+      master.gain.setValueAtTime(0, t);
+      master.gain.linearRampToValueAtTime(0.38, t + 0.18);
+      master.gain.setValueAtTime(0.38, t + dur - 0.55);
+      master.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      // Sawtooth oscillators: fundamental + harmonics, frequency rises then falls (moo shape)
+      [[95, 165, 92], [190, 330, 184], [285, 495, 276]].forEach(([s, peak, e], i) => {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(s, t);
+        o.frequency.linearRampToValueAtTime(peak, t + 0.6);
+        o.frequency.exponentialRampToValueAtTime(e, t + dur - 0.1);
+        const g = ctx.createGain();
+        g.gain.value = [1.0, 0.42, 0.18][i];
+        o.connect(g);
+        g.connect(lpf);
+        o.start(t);
+        o.stop(t + dur);
+      });
+
+      setTimeout(() => ctx.close().catch(() => {}), (dur + 0.6) * 1000);
+    } catch (_) {}
+  }
+
   function runCar() {
     if (animating || document.hidden) return;
     animating = true;
 
     const goRight = Math.random() > 0.5;
     const vw = window.innerWidth;
-    const carW = car.offsetWidth || 140;
+    const vh = window.innerHeight;
+
+    // Random size: 100–200px
+    const w = 100 + Math.random() * 100;
+    car.style.width = w + 'px';
+
+    // Random vertical position: bottom 0–35% of viewport height
+    car.style.bottom = (Math.random() * vh * 0.35) + 'px';
+
+    const carW = w;
 
     // GIF faces left by default — flip when going right
     carImg.style.transform = goRight ? 'scaleX(-1)' : '';
 
     car.style.display = 'block';
 
-    const startX = goRight ? -(carW + 10) : vw + 10;
-    const endX = goRight ? vw + 10 : -(carW + 10);
-    const duration = 9000 + Math.random() * 4000; // 9–13 s across viewport
-    const t0 = performance.now();
+    const startX  = goRight ? -(carW + 10) : vw + 10;
+    const endX    = goRight ? vw + 10 : -(carW + 10);
+    const totalMs = 9000 + Math.random() * 4000; // 9–13 s full crossing
+
+    // Stop near the middle (40–60% of the way across) to moo
+    const stopFrac  = 0.4 + Math.random() * 0.2;
+    const stopX     = startX + (endX - startX) * stopFrac;
+    const msToStop  = totalMs * stopFrac;
+    const msFromStop = totalMs * (1 - stopFrac);
+
+    // Total pause: short breath + moo (~2s) + brief linger
+    const pauseMs = 300 + 2000 + 500;
+
+    let phase = 'to-stop';
+    let t0 = performance.now();
+    let pauseStart = null;
 
     function step(now) {
-      const progress = Math.min((now - t0) / duration, 1);
-      car.style.transform = `translateX(${startX + (endX - startX) * progress}px)`;
-      if (progress < 1) {
+      if (phase === 'to-stop') {
+        const p = Math.min((now - t0) / msToStop, 1);
+        car.style.transform = `translateX(${startX + (stopX - startX) * p}px)`;
+        if (p < 1) { requestAnimationFrame(step); return; }
+        // Arrived — pause and moo
+        phase = 'paused';
+        pauseStart = now;
+        setTimeout(playMoo, 300); // small breath before moo
         requestAnimationFrame(step);
+
+      } else if (phase === 'paused') {
+        if (now - pauseStart < pauseMs) { requestAnimationFrame(step); return; }
+        phase = 'from-stop';
+        t0 = now;
+        requestAnimationFrame(step);
+
       } else {
+        const p = Math.min((now - t0) / msFromStop, 1);
+        car.style.transform = `translateX(${stopX + (endX - stopX) * p}px)`;
+        if (p < 1) { requestAnimationFrame(step); return; }
         car.style.display = 'none';
         car.style.transform = '';
         animating = false;
@@ -300,7 +376,6 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
   }
 
   function schedule(first) {
-    // First appearance: 5–10 s; subsequent: 30–90 s
     const lo = first ? 5000 : 30000;
     const hi = first ? 10000 : 90000;
     setTimeout(runCar, lo + Math.random() * (hi - lo));
