@@ -262,7 +262,7 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
   const car = document.getElementById('car-cruiser');
   if (!car) return;
 
-  const carSvg = car.querySelector('svg');
+  const carImg = car.querySelector('img');
   let animating = false;
 
   function runCar() {
@@ -271,10 +271,10 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
 
     const goRight = Math.random() > 0.5;
     const vw = window.innerWidth;
-    const carW = car.offsetWidth || 170;
+    const carW = car.offsetWidth || 140;
 
-    // Flip SVG so front always faces direction of travel
-    carSvg.style.transform = goRight ? '' : 'scaleX(-1)';
+    // Flip image so cow always faces direction of travel
+    carImg.style.transform = goRight ? '' : 'scaleX(-1)';
 
     car.style.display = 'block';
 
