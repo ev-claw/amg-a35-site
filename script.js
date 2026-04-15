@@ -2,6 +2,21 @@
 
 'use strict';
 
+// ─── Badge wave: split "John's Jalopy Guide" into per-char spans ─────────────
+(function initBadgeWave() {
+  const el = document.querySelector('.badge-wave-text');
+  if (!el) return;
+  const text = el.textContent;
+  el.textContent = '';
+  text.split('').forEach((ch, i) => {
+    const span = document.createElement('span');
+    span.className = ch === ' ' ? '' : 'wc';
+    span.textContent = ch === ' ' ? '\u00a0' : ch; // non-breaking space for gaps
+    if (ch !== ' ') span.style.animationDelay = (i * 0.07) + 's';
+    el.appendChild(span);
+  });
+})();
+
 // ─── Intersection Observer: Reveal animations ────────────────────────────────
 (function initReveal() {
   const observer = new IntersectionObserver(
