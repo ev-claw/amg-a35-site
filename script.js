@@ -273,8 +273,8 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
     const vw = window.innerWidth;
     const carW = car.offsetWidth || 140;
 
-    // GIF faces right by default — flip when going left
-    carImg.style.transform = goRight ? '' : 'scaleX(-1)';
+    // GIF faces left by default — flip when going right
+    carImg.style.transform = goRight ? 'scaleX(-1)' : '';
 
     car.style.display = 'block';
 
