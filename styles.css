@@ -119,14 +119,29 @@ ul { list-style: none; }
   left: 0;
   right: 0;
   z-index: 1000;
+  /* backdrop-filter moved to ::before so .nav does not become a containing
+     block for position:fixed children (backdrop-filter creates one in
+     Chrome/Firefox 86+), which was causing the mobile menu to be clipped
+     inside the 60px nav bar instead of filling the viewport below it. */
+  background: transparent;
+  border-bottom: 1px solid var(--border-dark);
+  transition: box-shadow var(--transition);
+}
+.nav::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: rgba(10,10,10,0.85);
   backdrop-filter: blur(16px) saturate(180%);
-  border-bottom: 1px solid var(--border-dark);
-  transition: background var(--transition), box-shadow var(--transition);
+  transition: background var(--transition);
+  z-index: -1;
+  pointer-events: none;
 }
 .nav.scrolled {
-  background: rgba(10,10,10,0.97);
   box-shadow: 0 2px 32px rgba(0,0,0,0.6);
+}
+.nav.scrolled::before {
+  background: rgba(10,10,10,0.97);
 }
 .nav-inner {
   max-width: 1400px;
@@ -1053,6 +1068,9 @@ ul { list-style: none; }
 .compare-header .compare-col-a45 { color: rgba(204,0,0,0.8); }
 .compare-col-disco { background: rgba(176,125,46,0.05); }
 .compare-header .compare-col-disco { color: #b07d2e; }
+.compare-col-ninja { background: rgba(26,140,42,0.06); }
+.compare-header .compare-col-ninja { color: #1a8c2a; }
+.verdict-card-ninja { border-left-color: #1a8c2a; }
 .compare-col.highlight { font-weight: 600; color: var(--text-primary); }
 .compare-row:nth-child(even) { background: rgba(255,255,255,0.02); }
 .compare-row:not(.compare-header) .compare-col { color: var(--amg-silver-dim); }
