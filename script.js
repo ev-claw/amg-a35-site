@@ -273,14 +273,14 @@ window.addEventListener('scroll', toggleBackToTop, { passive: true });
     const vw = window.innerWidth;
     const carW = car.offsetWidth || 140;
 
-    // Flip image so cow always faces direction of travel
-    carImg.style.transform = goRight ? '' : 'scaleX(-1)';
+    // GIF faces left by default — flip when going right
+    carImg.style.transform = goRight ? 'scaleX(-1)' : '';
 
     car.style.display = 'block';
 
     const startX = goRight ? -(carW + 10) : vw + 10;
     const endX = goRight ? vw + 10 : -(carW + 10);
-    const duration = 5500 + Math.random() * 2500; // 5.5–8 s across viewport
+    const duration = 9000 + Math.random() * 4000; // 9–13 s across viewport
     const t0 = performance.now();
 
     function step(now) {
